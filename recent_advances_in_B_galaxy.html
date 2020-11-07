@@ -1,0 +1,777 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>JabRef references</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<script type="text/javascript">
+<!--
+// QuickSearch script for JabRef HTML export 
+// Version: 3.0
+//
+// Copyright (c) 2006-2011, Mark Schenk
+//
+// This software is distributed under a Creative Commons Attribution 3.0 License
+// http://creativecommons.org/licenses/by/3.0/
+//
+// Features:
+// - intuitive find-as-you-type searching
+//    ~ case insensitive
+//    ~ ignore diacritics (optional)
+//
+// - search with/without Regular Expressions
+// - match BibTeX key
+//
+
+// Search settings
+var searchAbstract = true;	// search in abstract
+var searchComment = true;	// search in comment
+
+var noSquiggles = true; 	// ignore diacritics when searching
+var searchRegExp = false; 	// enable RegExp searches
+
+
+if (window.addEventListener) {
+	window.addEventListener("load",initSearch,false); }
+else if (window.attachEvent) {
+	window.attachEvent("onload", initSearch); }
+
+function initSearch() {
+	// check for quick search table and searchfield
+	if (!document.getElementById('qs_table')||!document.getElementById('quicksearch')) { return; }
+
+	// load all the rows and sort into arrays
+	loadTableData();
+	
+	//find the query field
+	qsfield = document.getElementById('qs_field');
+
+	// previous search term; used for speed optimisation
+	prevSearch = '';
+
+	//find statistics location
+	stats = document.getElementById('stat');
+	setStatistics(-1);
+	
+	// set up preferences
+	initPreferences();
+
+	// shows the searchfield
+	document.getElementById('quicksearch').style.display = 'block';
+	document.getElementById('qs_field').onkeyup = quickSearch;
+}
+
+function loadTableData() {
+	// find table and appropriate rows
+	searchTable = document.getElementById('qs_table');
+	var allRows = searchTable.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+	// split all rows into entryRows and infoRows (e.g. abstract, comment, bibtex)
+	entryRows = new Array(); infoRows = new Array(); absRows = new Array(); revRows = new Array();
+
+	// get data from each row
+	entryRowsData = new Array(); absRowsData = new Array(); revRowsData = new Array(); 
+	
+	BibTeXKeys = new Array();
+	
+	for (var i=0, k=0, j=0; i<allRows.length;i++) {
+		if (allRows[i].className.match(/entry/)) {
+			entryRows[j] = allRows[i];
+			entryRowsData[j] = stripDiacritics(getTextContent(allRows[i]));
+			allRows[i].id ? BibTeXKeys[j] = allRows[i].id : allRows[i].id = 'autokey_'+j;
+			j ++;
+		} else {
+			infoRows[k++] = allRows[i];
+			// check for abstract/comment
+			if (allRows[i].className.match(/abstract/)) {
+				absRows.push(allRows[i]);
+				absRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			} else if (allRows[i].className.match(/comment/)) {
+				revRows.push(allRows[i]);
+				revRowsData[j-1] = stripDiacritics(getTextContent(allRows[i]));
+			}
+		}
+	}
+	//number of entries and rows
+	numEntries = entryRows.length;
+	numInfo = infoRows.length;
+	numAbs = absRows.length;
+	numRev = revRows.length;
+}
+
+function quickSearch(){
+	
+	tInput = qsfield;
+
+	if (tInput.value.length == 0) {
+		showAll();
+		setStatistics(-1);
+		qsfield.className = '';
+		return;
+	} else {
+		t = stripDiacritics(tInput.value);
+
+		if(!searchRegExp) { t = escapeRegExp(t); }
+			
+		// only search for valid RegExp
+		try {
+			textRegExp = new RegExp(t,"i");
+			closeAllInfo();
+			qsfield.className = '';
+		}
+			catch(err) {
+			prevSearch = tInput.value;
+			qsfield.className = 'invalidsearch';
+			return;
+		}
+	}
+	
+	// count number of hits
+	var hits = 0;
+
+	// start looping through all entry rows
+	for (var i = 0; cRow = entryRows[i]; i++){
+
+		// only show search the cells if it isn't already hidden OR if the search term is getting shorter, then search all
+		if(cRow.className.indexOf('noshow')==-1 || tInput.value.length <= prevSearch.length){
+			var found = false; 
+
+			if (entryRowsData[i].search(textRegExp) != -1 || BibTeXKeys[i].search(textRegExp) != -1){ 
+				found = true;
+			} else {
+				if(searchAbstract && absRowsData[i]!=undefined) {
+					if (absRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+				if(searchComment && revRowsData[i]!=undefined) {
+					if (revRowsData[i].search(textRegExp) != -1){ found=true; } 
+				}
+			}
+			
+			if (found){
+				cRow.className = 'entry show';
+				hits++;
+			} else {
+				cRow.className = 'entry noshow';
+			}
+		}
+	}
+
+	// update statistics
+	setStatistics(hits)
+	
+	// set previous search value
+	prevSearch = tInput.value;
+}
+
+
+// Strip Diacritics from text
+// http://stackoverflow.com/questions/990904/javascript-remove-accents-in-strings
+
+// String containing replacement characters for stripping accents 
+var stripstring = 
+    'AAAAAAACEEEEIIII'+
+    'DNOOOOO.OUUUUY..'+
+    'aaaaaaaceeeeiiii'+
+    'dnooooo.ouuuuy.y'+
+    'AaAaAaCcCcCcCcDd'+
+    'DdEeEeEeEeEeGgGg'+
+    'GgGgHhHhIiIiIiIi'+
+    'IiIiJjKkkLlLlLlL'+
+    'lJlNnNnNnnNnOoOo'+
+    'OoOoRrRrRrSsSsSs'+
+    'SsTtTtTtUuUuUuUu'+
+    'UuUuWwYyYZzZzZz.';
+
+function stripDiacritics(str){
+
+    if(noSquiggles==false){
+        return str;
+    }
+
+    var answer='';
+    for(var i=0;i<str.length;i++){
+        var ch=str[i];
+        var chindex=ch.charCodeAt(0)-192;   // Index of character code in the strip string
+        if(chindex>=0 && chindex<stripstring.length){
+            // Character is within our table, so we can strip the accent...
+            var outch=stripstring.charAt(chindex);
+            // ...unless it was shown as a '.'
+            if(outch!='.')ch=outch;
+        }
+        answer+=ch;
+    }
+    return answer;
+}
+
+// http://stackoverflow.com/questions/3446170/escape-string-for-use-in-javascript-regex
+// NOTE: must escape every \ in the export code because of the JabRef Export...
+function escapeRegExp(str) {
+  return str.replace(/[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function toggleInfo(articleid,info) {
+
+	var entry = document.getElementById(articleid);
+	var abs = document.getElementById('abs_'+articleid);
+	var rev = document.getElementById('rev_'+articleid);
+	var bib = document.getElementById('bib_'+articleid);
+	
+	if (abs && info == 'abstract') {
+		abs.className.indexOf('noshow') == -1?abs.className = 'abstract noshow':abs.className = 'abstract show';
+	} else if (rev && info == 'comment') {
+		rev.className.indexOf('noshow') == -1?rev.className = 'comment noshow':rev.className = 'comment show';
+	} else if (bib && info == 'bibtex') {
+		bib.className.indexOf('noshow') == -1?bib.className = 'bibtex noshow':bib.className = 'bibtex show';
+	} else { 
+		return;
+	}
+
+	// check if one or the other is available
+	var revshow; var absshow; var bibshow;
+	(abs && abs.className.indexOf('noshow') == -1)? absshow = true: absshow = false;
+	(rev && rev.className.indexOf('noshow') == -1)? revshow = true: revshow = false;	
+	(bib && bib.className.indexOf('noshow') == -1)? bibshow = true: bibshow = false;
+	
+	// highlight original entry
+	if(entry) {
+		if (revshow || absshow || bibshow) {
+		entry.className = 'entry highlight show';
+		} else {
+		entry.className = 'entry show';
+		}
+	}
+	
+	// When there's a combination of abstract/comment/bibtex showing, need to add class for correct styling
+	if(absshow) {
+		(revshow||bibshow)?abs.className = 'abstract nextshow':abs.className = 'abstract';
+	} 
+	if (revshow) {
+		bibshow?rev.className = 'comment nextshow': rev.className = 'comment';
+	}	
+	
+}
+
+function setStatistics (hits) {
+	if(hits < 0) { hits=numEntries; }
+	if(stats) { stats.firstChild.data = hits + '/' + numEntries}
+}
+
+function getTextContent(node) {
+	// Function written by Arve Bersvendsen
+	// http://www.virtuelvis.com
+	
+	if (node.nodeType == 3) {
+	return node.nodeValue;
+	} // text node
+	if (node.nodeType == 1 && node.className != "infolinks") { // element node
+	var text = [];
+	for (var chld = node.firstChild;chld;chld=chld.nextSibling) {
+		text.push(getTextContent(chld));
+	}
+	return text.join("");
+	} return ""; // some other node, won't contain text nodes.
+}
+
+function showAll(){
+	closeAllInfo();
+	for (var i = 0; i < numEntries; i++){ entryRows[i].className = 'entry show'; }
+}
+
+function closeAllInfo(){
+	for (var i=0; i < numInfo; i++){
+		if (infoRows[i].className.indexOf('noshow') ==-1) {
+			infoRows[i].className = infoRows[i].className + ' noshow';
+		}
+	}
+}
+
+function clearQS() {
+	qsfield.value = '';
+	showAll();
+}
+
+function redoQS(){
+	showAll();
+	quickSearch(qsfield);
+}
+
+function updateSetting(obj){
+	var option = obj.id;
+	var checked = obj.value;
+
+	switch(option)
+	 {
+	 case "opt_searchAbs":
+	   searchAbstract=!searchAbstract;
+	   redoQS();
+	   break;
+	 case "opt_searchRev":
+	   searchComment=!searchComment;
+	   redoQS();
+	   break;
+	 case "opt_useRegExp":
+	   searchRegExp=!searchRegExp;
+	   redoQS();
+	   break;
+	 case "opt_noAccents":
+	   noSquiggles=!noSquiggles;
+	   loadTableData();
+	   redoQS();
+	   break;
+	 }
+}
+
+function initPreferences(){
+	if(searchAbstract){document.getElementById("opt_searchAbs").checked = true;}
+	if(searchComment){document.getElementById("opt_searchRev").checked = true;}
+	if(noSquiggles){document.getElementById("opt_noAccents").checked = true;}
+	if(searchRegExp){document.getElementById("opt_useRegExp").checked = true;}
+	
+	if(numAbs==0) {document.getElementById("opt_searchAbs").parentNode.style.display = 'none';}
+	if(numRev==0) {document.getElementById("opt_searchRev").parentNode.style.display = 'none';}
+}
+
+function toggleSettings(){
+	var togglebutton = document.getElementById('showsettings');
+	var settings = document.getElementById('settings');
+	
+	if(settings.className == "hidden"){
+		settings.className = "show";
+		togglebutton.innerText = "close settings";
+		togglebutton.textContent = "close settings";
+	}else{
+		settings.className = "hidden";
+		togglebutton.innerText = "settings...";		
+		togglebutton.textContent = "settings...";
+	}
+}
+
+-->
+</script>
+<style type="text/css">
+body { background-color: white; font-family: Arial, sans-serif; font-size: 13px; line-height: 1.2; padding: 1em; color: #2E2E2E; margin: auto 2em; }
+
+form#quicksearch { width: auto; border-style: solid; border-color: gray; border-width: 1px 0px; padding: 0.7em 0.5em; display:none; position:relative; }
+span#searchstat {padding-left: 1em;}
+
+div#settings { margin-top:0.7em; /* border-bottom: 1px transparent solid; background-color: #efefef; border: 1px grey solid; */ }
+div#settings ul {margin: 0; padding: 0; }
+div#settings li {margin: 0; padding: 0 1em 0 0; display: inline; list-style: none; }
+div#settings li + li { border-left: 2px #efefef solid; padding-left: 0.5em;}
+div#settings input { margin-bottom: 0px;}
+
+div#settings.hidden {display:none;}
+
+#showsettings { border: 1px grey solid; padding: 0 0.5em; float:right; line-height: 1.6em; text-align: right; }
+#showsettings:hover { cursor: pointer; }
+
+.invalidsearch { background-color: red; }
+input[type="button"] { background-color: #efefef; border: 1px #2E2E2E solid;}
+
+table { width: 100%; empty-cells: show; border-spacing: 0em 0.2em; margin: 1em 0em; border-style: none; }
+th, td { border: 1px gray solid; border-width: 1px 1px; padding: 0.5em; vertical-align: top; text-align: left; }
+th { background-color: #efefef; }
+td + td, th + th { border-left: none; }
+
+td a { color: navy; text-decoration: none; }
+td a:hover  { text-decoration: underline; }
+
+tr.noshow { display: none;}
+tr.highlight td { background-color: #EFEFEF; border-top: 2px #2E2E2E solid; font-weight: bold; }
+tr.abstract td, tr.comment td, tr.bibtex td { background-color: #EFEFEF; text-align: justify; border-bottom: 2px #2E2E2E solid; }
+tr.nextshow td { border-bottom: 1px gray solid; }
+
+tr.bibtex pre { width: 100%; overflow: auto; white-space: pre-wrap;}
+p.infolinks { margin: 0.3em 0em 0em 0em; padding: 0px; }
+
+@media print {
+	p.infolinks, #qs_settings, #quicksearch, t.bibtex { display: none !important; }
+	tr { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<form action="" id="quicksearch">
+<input type="text" id="qs_field" autocomplete="off" placeholder="Type to search..." /> <input type="button" onclick="clearQS()" value="clear" />
+<span id="searchstat">Matching entries: <span id="stat">0</span></span>
+<div id="showsettings" onclick="toggleSettings()">settings...</div>
+<div id="settings" class="hidden">
+<ul>
+<li><input type="checkbox" class="search_setting" id="opt_searchAbs" onchange="updateSetting(this)"><label for="opt_searchAbs"> include abstract</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_searchRev" onchange="updateSetting(this)"><label for="opt_searchRev"> include comment</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_useRegExp" onchange="updateSetting(this)"><label for="opt_useRegExp"> use RegExp</label></li>
+<li><input type="checkbox" class="search_setting" id="opt_noAccents" onchange="updateSetting(this)"><label for="opt_noAccents"> ignore accents</label></li>
+</ul>
+</div>
+</form>
+<table id="qs_table" border="1">
+<thead><tr><th width="20%">Author</th><th width="30%">Title</th><th width="5%">Year</th><th width="30%">Journal/Proceedings</th><th width="10%">Reftype</th><th width="5%">DOI/URL</th></tr></thead>
+<tbody><tr id="1999A&A...348..351D" class="entry">
+	<td>Dolag, K., Bartelmann, M. and Lesch, H.</td>
+	<td>SPH simulations of magnetic fields in galaxy clusters <p class="infolinks">[<a href="javascript:toggleInfo('1999A&A...348..351D','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('1999A&A...348..351D','bibtex')">BibTeX</a>]</p></td>
+	<td>1999</td>
+	<td>aap<br/>Vol. 348, pp. 351-363&nbsp;</td>
+	<td>article</td>
+	<td>&nbsp;</td>
+</tr>
+<tr id="abs_1999A&A...348..351D" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We perform cosmological, hydrodynamic simulations of magnetic fields in<br>        galaxy clusters. The computational code combines the special-<br>        purpose hardware Grape for calculating gravitational<br>        interaction, and smooth-particle hydrodynamics for the gas<br>        component. We employ the usual MHD equations for the evolution<br>        of the magnetic field in an ideally conducting plasma. As a<br>        first application, we focus on the question what kind of initial<br>        magnetic fields yield final field configurations within clusters<br>        which are compatible with Faraday-rotation measurements. Our<br>        main results can be summarised as follows: (i) Initial magnetic<br>        field strengths are amplified by approximately three orders of<br>        magnitude in cluster cores, one order of magnitude above the<br>        expectation from spherical collapse. (ii) Vastly different<br>        initial field configurations (homogeneous or chaotic) yield<br>        results that cannot significantly be distinguished. (iii) Micro-<br>        Gauss fields and Faraday-rotation observations are well<br>        reproduced in our simulations starting from initial magnetic<br>        fields of -0.5extextasciitilde 10(-9) G strength at<br>        redshift 15. Our results show that (i) shear flows in clusters<br>        are crucial for amplifying magnetic fields beyond simple<br>        compression, (ii) final field configurations in clusters are<br>        dominated by the cluster collapse rather than by the initial<br>        configuration, and (iii) initial magnetic fields of order 10(-9)<br>        G are required to match Faraday-rotation observations in real<br>        clusters.</td>
+</tr>
+<tr id="bib_1999A&A...348..351D" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{1999A&A...348..351D,
+  author = {Dolag, K. and Bartelmann, M. and Lesch, H.},
+  title = {SPH simulations of magnetic fields in galaxy clusters},
+  journal = {aap},
+  year = {1999},
+  volume = {348},
+  pages = {351-363}
+}
+</pre></td>
+</tr>
+<tr id="2013MNRAS.432..176P" class="entry">
+	<td>Pakmor, R. and Springel, V.</td>
+	<td>Simulations of magnetic fields in isolated disc galaxies <p class="infolinks">[<a href="javascript:toggleInfo('2013MNRAS.432..176P','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2013MNRAS.432..176P','bibtex')">BibTeX</a>]</p></td>
+	<td>2013</td>
+	<td>mnras<br/>Vol. 432(1), pp. 176-193&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stt428">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2013MNRAS.432..176P" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Magnetic fields are known to be dynamically important in the<br>        interstellar medium of our own Galaxy, and they are ubiquitously<br>        observed in diffuse gas in the haloes of galaxies and galaxy<br>        clusters. Yet, magnetic fields have typically been neglected in<br>        studies of the formation of galaxies, leaving their global<br>        influence on galaxy formation largely unclear. Here we extend<br>        our magnetohydrodynamics (MHD) implementation in the moving-mesh<br>        code AREPO to cosmological problems which include radiative<br>        cooling and the formation of stars. In particular, we replace<br>        our previously employed divergence cleaning approach with a<br>        Powell eight-wave scheme, which turns out to be significantly<br>        more stable, even in very dynamic environments. We verify the<br>        improved accuracy through simulations of the magneto-rotational<br>        instability in accretion discs, which reproduce the correct<br>        linear growth rate of the instability. Using this new MHD code,<br>        we simulate the formation of isolated disc galaxies similar to<br>        the Milky Way using idealized initial conditions with and<br>        without magnetic fields. We find that the magnetic field<br>        strength is quickly amplified in the initial central starburst<br>        and the differential rotation of the forming disc, eventually<br>        reaching a saturation value. At this point, the magnetic field<br>        pressure in the interstellar medium becomes comparable to the<br>        thermal pressure, and a further efficient growth of the magnetic<br>        field strength is prevented. The additional pressure component<br>        leads to a lower star formation rate at late times compared to<br>        simulations without magnetic fields, and induces changes in the<br>        spiral arm structures of the gas disc. In addition, we observe<br>        highly magnetized fountain-like outflows from the disc. These<br>        results are robust with numerical resolution and are largely<br>        independent of the initial magnetic seed field strength assumed<br>        in the initial conditions, as the amplification process is rapid<br>        and self-regulated. Our findings suggest an important influence<br>        of magnetic fields on galaxy formation and evolution, cautioning<br>        against their neglect in theoretical models of structure<br>        formation.</td>
+</tr>
+<tr id="bib_2013MNRAS.432..176P" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2013MNRAS.432..176P,
+  author = {Pakmor, R&uuml;diger and Springel, Volker},
+  title = {Simulations of magnetic fields in isolated disc galaxies},
+  journal = {mnras},
+  year = {2013},
+  volume = {432},
+  number = {1},
+  pages = {176-193},
+  doi = {https://doi.org/10.1093/mnras/stt428}
+}
+</pre></td>
+</tr>
+<tr id="2014ApJ...783L..20P" class="entry">
+	<td>Pakmor, R., Marinacci, F. and Springel, V.</td>
+	<td>Magnetic Fields in Cosmological Simulations of Disk Galaxies <p class="infolinks">[<a href="javascript:toggleInfo('2014ApJ...783L..20P','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2014ApJ...783L..20P','bibtex')">BibTeX</a>]</p></td>
+	<td>2014</td>
+	<td>apjl<br/>Vol. 783(1), pp. L20&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1088/2041-8205/783/1/L20">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2014ApJ...783L..20P" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Observationally, magnetic fields reach equipartition with thermal energy<br>        and cosmic rays in the interstellar medium of disk galaxies such<br>        as the Milky Way. However, thus far cosmological simulations of<br>        the formation and evolution of galaxies have usually neglected<br>        magnetic fields. We employ the moving-mesh code AREPO to follow<br>        for the first time the formation and evolution of a Milky Way-<br>        like disk galaxy in its full cosmological context while taking<br>        into account magnetic fields. We find that a prescribed tiny<br>        magnetic seed field grows exponentially by a small-scale dynamo<br>        until it saturates around z = 4 with a magnetic energy of about<br>        10% of the kinetic energy in the center of the galaxy's main<br>        progenitor halo. By z = 2, a well-defined gaseous disk forms in<br>        which the magnetic field is further amplified by differential<br>        rotation, until it saturates at an average field strength of<br>        -0.5ex6 \muG in the<br>        disk plane. In this phase, the magnetic field is transformed<br>        from a chaotic small-scale field to an ordered large-scale field<br>        coherent on scales comparable to the disk radius. The final<br>        magnetic field strength, its radial profile, and the stellar<br>        structure of the disk compare well with observational data. A<br>        minor merger temporarily increases the magnetic field strength<br>        by about a factor of two, before it quickly decays back to its<br>        saturation value. Our results are highly insensitive to the<br>        initial seed field strength and suggest that the large-scale<br>        magnetic field in spiral galaxies can be explained as a result<br>        of the cosmic structure formation process.</td>
+</tr>
+<tr id="bib_2014ApJ...783L..20P" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2014ApJ...783L..20P,
+  author = {Pakmor, R&uuml;diger and Marinacci, Federico and Springel, Volker},
+  title = {Magnetic Fields in Cosmological Simulations of Disk Galaxies},
+  journal = {apjl},
+  year = {2014},
+  volume = {783},
+  number = {1},
+  pages = {L20},
+  doi = {https://doi.org/10.1088/2041-8205/783/1/L20}
+}
+</pre></td>
+</tr>
+<tr id="2016MNRAS.457.1722R" class="entry">
+	<td>Rieder, M. and Teyssier, R.</td>
+	<td>A small-scale dynamo in feedback-dominated galaxies as the origin of cosmic magnetic fields - I. The kinematic phase <p class="infolinks">[<a href="javascript:toggleInfo('2016MNRAS.457.1722R','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2016MNRAS.457.1722R','bibtex')">BibTeX</a>]</p></td>
+	<td>2016</td>
+	<td>mnras<br/>Vol. 457(2), pp. 1722-1738&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stv2985">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2016MNRAS.457.1722R" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The origin and evolution of magnetic fields in the Universe is still an<br>        open question. Their observations in galaxies suggest strong<br>        magnetic fields already at high redshift as well as at present<br>        time. However, neither primordial magnetic fields nor battery<br>        processes can account for such high field strengths, which<br>        implies the presence of a dynamo process with rapid growth rates<br>        in high-redshift galaxies and subsequent maintenance against<br>        decay. We investigate the particular role played by feedback<br>        mechanisms in creating strong fluid turbulence, allowing for a<br>        magnetic dynamo to emerge. Performing magnetohydrodynamic<br>        simulations of isolated cooling gas haloes, we compare the<br>        magnetic field evolution for various initial field topologies<br>        and various stellar feedback mechanisms. We find that feedback<br>        can indeed drive strong gas turbulence and dynamo action. We see<br>        typical properties of Kolmogorov turbulence with a k^-5/3<br>        kinetic energy spectrum, as well as a small-scale dynamo, with a<br>        k^3/2 magnetic energy spectrum predicted by Kazantsev dynamo<br>        theory. We also investigate simulations with a final quiescent<br>        phase. As turbulence decreases, the galactic fountain settles<br>        into a thin, rotationally supported disc. The magnetic field<br>        develops a large-scale well-ordered structure with even<br>        symmetry, which is in good agreement with magnetic field<br>        observations of nearby spirals. Our findings suggest that weak<br>        initial seed fields were first amplified by a small-scale dynamo<br>        during a violent feedback-dominated early phase in the galaxy<br>        formation history, followed by a more quiescent evolution, where<br>        the fields have slowly decayed or were maintained via large-<br>        scale dynamo action.</td>
+</tr>
+<tr id="bib_2016MNRAS.457.1722R" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2016MNRAS.457.1722R,
+  author = {Rieder, Michael and Teyssier, Romain},
+  title = {A small-scale dynamo in feedback-dominated galaxies as the origin of cosmic magnetic fields - I. The kinematic phase},
+  journal = {mnras},
+  year = {2016},
+  volume = {457},
+  number = {2},
+  pages = {1722-1738},
+  doi = {https://doi.org/10.1093/mnras/stv2985}
+}
+</pre></td>
+</tr>
+<tr id="2017MNRAS.469.3185P" class="entry">
+	<td>Pakmor, R., G&oacute;mez, F.A., Grand , R.J.J., Marinacci, F., Simpson, C.M., Springel, V., Campbell, D.J.R., Frenk, C.S., Guillet, T., Pfrommer, C. and White, S.D.M.</td>
+	<td>Magnetic field formation in the Milky Way like disc galaxies of the Auriga project <p class="infolinks">[<a href="javascript:toggleInfo('2017MNRAS.469.3185P','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2017MNRAS.469.3185P','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>mnras<br/>Vol. 469(3), pp. 3185-3199&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stx1074">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2017MNRAS.469.3185P" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: The magnetic fields observed in the Milky Way and nearby galaxies appear<br>        to be in equipartition with the turbulent, thermal and cosmic<br>        ray energy densities, and hence are expected to be dynamically<br>        important. However, the origin of these strong magnetic fields<br>        is still unclear, and most previous attempts to simulate galaxy<br>        formation from cosmological initial conditions have ignored them<br>        altogether. Here, we analyse the magnetic fields predicted by<br>        the simulations of the Auriga Project, a set of 30 high-<br>        resolution cosmological zoom simulations of Milky Way like<br>        galaxies, carried out with a moving-mesh magnetohydrodynamics<br>        code and a detailed galaxy formation physics model. We find that<br>        the magnetic fields grow exponentially at early times owing to a<br>        small-scale dynamo with an e-folding time of roughly 100 Myr in<br>        the centre of haloes until saturation occurs around z = 2-3,<br>        when the magnetic energy density reaches about 10 per cent of<br>        the turbulent energy density with a typical strength of 10-50<br>        {\ensuremath{\mu}} G\. In the galactic centres, the ratio<br>        between magnetic and turbulent energies remains nearly constant<br>        until z = 0. At larger radii, differential rotation in the discs<br>        leads to linear amplification that typically saturates around z<br>        = 0.5-0. The final radial and vertical variations of the<br>        magnetic field strength can be well described by two joint<br>        exponential profiles, and are in good agreement with<br>        observational constraints. Overall, the magnetic fields have<br>        only little effect on the global evolution of the galaxies as it<br>        takes too long to reach equipartition. We also demonstrate that<br>        our results are well converged with numerical resolution.</td>
+</tr>
+<tr id="bib_2017MNRAS.469.3185P" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2017MNRAS.469.3185P,
+  author = {Pakmor, R&uuml;diger and G&oacute;mez, Facundo A. and Grand , Robert J.&nbsp;J. and Marinacci, Federico and Simpson, Christine M. and Springel, Volker and Campbell, David J.&nbsp;R. and Frenk, Carlos S. and Guillet, Thomas and Pfrommer, Christoph and White, Simon D.&nbsp;M.},
+  title = {Magnetic field formation in the Milky Way like disc galaxies of the Auriga project},
+  journal = {mnras},
+  year = {2017},
+  volume = {469},
+  number = {3},
+  pages = {3185-3199},
+  doi = {https://doi.org/10.1093/mnras/stx1074}
+}
+</pre></td>
+</tr>
+<tr id="2017MNRAS.471..144S" class="entry">
+	<td>Su, K.-Y., Hopkins, P.F., Hayward, C.C., Faucher-Gigu&egrave;re, C.-A., Kere&scaron;, D., Ma, X. and Robles, V.H.</td>
+	<td>Feedback first: the surprisingly weak effects of magnetic fields, viscosity, conduction and metal diffusion on sub-L* galaxy formation <p class="infolinks">[<a href="javascript:toggleInfo('2017MNRAS.471..144S','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2017MNRAS.471..144S','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>mnras<br/>Vol. 471(1), pp. 144-166&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stx1463">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2017MNRAS.471..144S" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Using high-resolution simulations with explicit treatment of stellar<br>        feedback physics based on the FIRE (Feedback In Realistic<br>        Environments) project, we study how galaxy formation and the<br>        interstellar medium (ISM) are affected by magnetic fields,<br>        anisotropic Spitzer-Braginskii conduction and viscosity, and<br>        sub-grid metal diffusion from unresolved turbulence. We consider<br>        controlled simulations of isolated (non-cosmological) galaxies<br>        but also a limited set of cosmological 'zoom-in' simulations.<br>        Although simulations have shown significant effects from these<br>        physics with weak or absent stellar feedback, the effects are<br>        much weaker than those of stellar feedback when the latter is<br>        modelled explicitly. The additional physics have no systematic<br>        effect on galactic star formation rates (SFRs). In contrast,<br>        removing stellar feedback leads to SFRs being overpredicted by<br>        factors of \sim10-100. Without feedback, neither<br>        galactic winds nor volume-filling hot-phase gas exist, and discs<br>        tend to runaway collapse to ultra-thin scaleheights with<br>        unphysically dense clumps congregating at the galactic centre.<br>        With stellar feedback, a multi-phase, turbulent medium with<br>        galactic fountains and winds is established. At currently<br>        achievable resolutions and for the investigated halo mass range<br>        10^10-10^13 M_☉, the additional physics<br>        investigated here (magnetohydrodynamic, conduction, viscosity,<br>        metal diffusion) have only weak (\sim10 per cent-<br>        level) effects on regulating SFR and altering the balance of<br>        phases, outflows or the energy in ISM turbulence, consistent<br>        with simple equipartition arguments. We conclude that galactic<br>        star formation and the ISM are primarily governed by a<br>        combination of turbulence, gravitational instabilities and<br>        feedback. We add the caveat that active galactic nucleus<br>        feedback is not included in the present work.</td>
+</tr>
+<tr id="bib_2017MNRAS.471..144S" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2017MNRAS.471..144S,
+  author = {Su, Kung-Yi and Hopkins, Philip F. and Hayward, Christopher C. and Faucher-Gigu&egrave;re, Claude-Andr&eacute; and Kere&scaron;, Du&scaron;an and Ma, Xiangcheng and Robles, Victor H.},
+  title = {Feedback first: the surprisingly weak effects of magnetic fields, viscosity, conduction and metal diffusion on sub-L* galaxy formation},
+  journal = {mnras},
+  year = {2017},
+  volume = {471},
+  number = {1},
+  pages = {144-166},
+  doi = {https://doi.org/10.1093/mnras/stx1463}
+}
+</pre></td>
+</tr>
+<tr id="2017MNRAS.471.2674R" class="entry">
+	<td>Rieder, M. and Teyssier, R.</td>
+	<td>A small-scale dynamo in feedback-dominated galaxies - II. The saturation phase and the final magnetic configuration <p class="infolinks">[<a href="javascript:toggleInfo('2017MNRAS.471.2674R','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2017MNRAS.471.2674R','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>mnras<br/>Vol. 471(3), pp. 2674-2686&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stx1670">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2017MNRAS.471.2674R" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Magnetic fields in galaxies are believed to be the result of dynamo<br>        amplification of initially weak seed fields, reaching<br>        equipartition strength inside the interstellar medium. The<br>        small-scale dynamo (SSD) appears to be a viable mechanism to<br>        explain observations of strong magnetic fields in present-day<br>        and high-redshift galaxies, considering the extreme weakness of<br>        viable seed fields. Performing high-resolution adaptive mesh<br>        magnetohydrodynamic simulations of a small-mass, isolated<br>        cooling halo with an initial magnetic seed field strength well<br>        below equipartition, we follow the SSD amplification from<br>        supernova-induced turbulence up to saturation of the field. We<br>        find that saturation occurs when the average magnetic pressure<br>        reaches only 3 per cent of the turbulent pressure. The magnetic<br>        energy growth transitions from exponential to linear, and<br>        finally comes to halt. The saturation level increases slightly<br>        with grid resolution. These results are in good agreement with<br>        theoretical predictions for magnetic Prandtl numbers of the<br>        order ofP_m \sim 1 and turbulent Mach numbers<br>        of the order of M \sim 10. When we suppress<br>        supernova feedback after our simulation has reached saturation,<br>        we find that turbulence decays and that the gas falls back on to<br>        a thin disc with the magnetic field in local equipartition in<br>        most of the dense gas arms. We propose a scenario in which<br>        galactic magnetic fields are amplified from weak seed fields in<br>        the early stages of the Universe to sub-equipartition fields,<br>        owing to the turbulent environment of feedback-dominated<br>        galaxies at high redshift, and are evolved further in a later<br>        stage up to equipartition, as galaxies transformed into more<br>        quiescent, large spiral discs.</td>
+</tr>
+<tr id="bib_2017MNRAS.471.2674R" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2017MNRAS.471.2674R,
+  author = {Rieder, Michael and Teyssier, Romain},
+  title = {A small-scale dynamo in feedback-dominated galaxies - II. The saturation phase and the final magnetic configuration},
+  journal = {mnras},
+  year = {2017},
+  volume = {471},
+  number = {3},
+  pages = {2674-2686},
+  doi = {https://doi.org/10.1093/mnras/stx1670}
+}
+</pre></td>
+</tr>
+<tr id="2017MNRAS.472.4368R" class="entry">
+	<td>Rieder, M. and Teyssier, R.</td>
+	<td>A small-scale dynamo in feedback-dominated galaxies - III. Cosmological simulations <p class="infolinks">[<a href="javascript:toggleInfo('2017MNRAS.472.4368R','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2017MNRAS.472.4368R','bibtex')">BibTeX</a>]</p></td>
+	<td>2017</td>
+	<td>mnras<br/>Vol. 472(4), pp. 4368-4373&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stx2276">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2017MNRAS.472.4368R" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Magnetic fields are widely observed in the Universe in virtually all<br>        astrophysical objects, from individual stars to entire galaxies,<br>        even in the intergalactic medium, but their specific genesis has<br>        long been debated. Due to the development of more realistic<br>        models of galaxy formation, viable scenarios are emerging to<br>        explain cosmic magnetism, thanks to both deeper observations and<br>        more efficient and accurate computer simulations. We present<br>        here a new cosmological high-resolution zoom-in<br>        magnetohydrodynamic (MHD) simulation, using the adaptive mesh<br>        refinement technique, of a dwarf galaxy with an initially weak<br>        and uniform magnetic seed field that is amplified by a small-<br>        scale dynamo (SSD) driven by supernova-induced turbulence. As<br>        first structures form from the gravitational collapse of small<br>        density fluctuations, the frozen-in magnetic field separates<br>        from the cosmic expansion and grows through compression. In a<br>        second step, star formation sets in and establishes a strong<br>        galactic fountain, self-regulated by supernova explosions.<br>        Inside the galaxy, the interstellar medium becomes highly<br>        turbulent, dominated by strong supersonic shocks, as<br>        demonstrated by the spectral analysis of the gas kinetic energy.<br>        In this turbulent environment, the magnetic field is quickly<br>        amplified via a SSD process and is finally carried out into the<br>        circumgalactic medium by a galactic wind. This realistic<br>        cosmological simulation explains how initially weak magnetic<br>        seed fields can be amplified quickly in early, feedback-<br>        dominated galaxies, and predicts, as a consequence of the SSD<br>        process, that high-redshift magnetic fields are likely to be<br>        dominated by their small-scale components.</td>
+</tr>
+<tr id="bib_2017MNRAS.472.4368R" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2017MNRAS.472.4368R,
+  author = {Rieder, Michael and Teyssier, Romain},
+  title = {A small-scale dynamo in feedback-dominated galaxies - III. Cosmological simulations},
+  journal = {mnras},
+  year = {2017},
+  volume = {472},
+  number = {4},
+  pages = {4368-4373},
+  doi = {https://doi.org/10.1093/mnras/stx2276}
+}
+</pre></td>
+</tr>
+<tr id="2018MNRAS.473L.111S" class="entry">
+	<td>Su, K.-Y., Hayward, C.C., Hopkins, P.F., Quataert, E., Faucher-Gigu&egrave;re, C.-A. and Kere&scaron;, D.</td>
+	<td>Stellar feedback strongly alters the amplification and morphology of galactic magnetic fields <p class="infolinks">[<a href="javascript:toggleInfo('2018MNRAS.473L.111S','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2018MNRAS.473L.111S','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>mnras<br/>Vol. 473(1), pp. L111-L115&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnrasl/slx172">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2018MNRAS.473L.111S" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Using high-resolution magnetohydrodynamic simulations of idealized, non-<br>        cosmological galaxies, we investigate how cooling, star<br>        formation and stellar feedback affect galactic magnetic fields.<br>        We find that the amplification histories, saturation values and<br>        morphologies of the magnetic fields vary considerably depending<br>        on the baryonic physics employed, primarily because of<br>        differences in the gas density distribution. In particular,<br>        adiabatic runs and runs with a subgrid (effective equation of<br>        state) stellar feedback model yield lower saturation values and<br>        morphologies that exhibit greater large-scale order compared<br>        with runs that adopt explicit stellar feedback and runs with<br>        cooling and star formation but no feedback. The discrepancies<br>        mostly lie in gas denser than the galactic average, which<br>        requires cooling and explicit fragmentation to capture.<br>        Independent of the baryonic physics included, the magnetic field<br>        strength scales with gas density as B \propto<br>        n^2/3, suggesting isotropic flux freezing or equipartition<br>        between the magnetic and gravitational energies during the field<br>        amplification. We conclude that accurate treatments of cooling,<br>        star formation and stellar feedback are crucial for obtaining<br>        the correct magnetic field strength and morphology in dense gas,<br>        which, in turn, is essential for properly modelling other<br>        physical processes that depend on the magnetic field, such as<br>        cosmic ray feedback.</td>
+</tr>
+<tr id="bib_2018MNRAS.473L.111S" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2018MNRAS.473L.111S,
+  author = {Su, Kung-Yi and Hayward, Christopher C. and Hopkins, Philip F. and Quataert, Eliot and Faucher-Gigu&egrave;re, Claude-Andr&eacute; and Kere&scaron;, Du&scaron;an},
+  title = {Stellar feedback strongly alters the amplification and morphology of galactic magnetic fields},
+  journal = {mnras},
+  year = {2018},
+  volume = {473},
+  number = {1},
+  pages = {L111-L115},
+  doi = {https://doi.org/10.1093/mnrasl/slx172}
+}
+</pre></td>
+</tr>
+<tr id="2018MNRAS.474.1672V" class="entry">
+	<td>Vazza, F., Brunetti, G., Br&uuml;ggen, M. and Bonafede, A.</td>
+	<td>Resolved magnetic dynamo action in the simulated intracluster medium <p class="infolinks">[<a href="javascript:toggleInfo('2018MNRAS.474.1672V','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2018MNRAS.474.1672V','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>mnras<br/>Vol. 474(2), pp. 1672-1687&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stx2830">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2018MNRAS.474.1672V" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Faraday rotation and synchrotron emission from extragalactic radio<br>        sources give evidence for the presence of magnetic fields<br>        extending over \sim Mpc scales. However, the<br>        origin of these fields remains elusive. With new high-resolution<br>        grid simulations, we studied the growth of magnetic fields in a<br>        massive galaxy cluster that in several aspects is similar to the<br>        Coma cluster. We investigated models in which magnetic fields<br>        originate from primordial seed fields with comoving strengths of<br>        0.1 nG at redshift z = 30. The simulations show evidence of<br>        significant magnetic field amplification. At the best spatial<br>        resolution (3.95 kpc), we are able to resolve the scale where<br>        magnetic tension balances the bending of magnetic lines by<br>        turbulence. This allows us to observe the final growth stage of<br>        the small-scale dynamo. To our knowledge, this is the first time<br>        that this is seen in cosmological simulations of the<br>        intracluster medium. Our mock observations of Faraday rotation<br>        provide a good match to observations of the Coma cluster.<br>        However, the distribution of magnetic fields shows strong<br>        departures from a simple Maxwellian distribution, suggesting<br>        that the three-dimensional structure of magnetic fields in real<br>        clusters may be significantly different than what is usually<br>        assumed when inferring magnetic field values from rotation<br>        measure observations.</td>
+</tr>
+<tr id="bib_2018MNRAS.474.1672V" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2018MNRAS.474.1672V,
+  author = {Vazza, F. and Brunetti, G. and Br&uuml;ggen, M. and Bonafede, A.},
+  title = {Resolved magnetic dynamo action in the simulated intracluster medium},
+  journal = {mnras},
+  year = {2018},
+  volume = {474},
+  number = {2},
+  pages = {1672-1687},
+  doi = {https://doi.org/10.1093/mnras/stx2830}
+}
+</pre></td>
+</tr>
+<tr id="2018MNRAS.480.5113M" class="entry">
+	<td>Marinacci, F., Vogelsberger, M., Pakmor, R., Torrey, P., Springel, V., Hernquist, L., Nelson, D., Weinberger, R., Pillepich, A., Naiman, J. and Genel, S.</td>
+	<td>First results from the IllustrisTNG simulations: radio haloes and magnetic fields <p class="infolinks">[<a href="javascript:toggleInfo('2018MNRAS.480.5113M','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2018MNRAS.480.5113M','bibtex')">BibTeX</a>]</p></td>
+	<td>2018</td>
+	<td>mnras<br/>Vol. 480(4), pp. 5113-5139&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/sty2206">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2018MNRAS.480.5113M" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We introduce the IllustrisTNG project, a new suite of cosmological<br>        magnetohydrodynamical simulations performed with the moving-mesh<br>        code AREPO employing an updated Illustris galaxy formation<br>        model. Here we focus on the general properties of magnetic<br>        fields and the diffuse radio emission in galaxy clusters.<br>        Magnetic fields are prevalent in galaxies, and their build-up is<br>        closely linked to structure formation. We find that structure<br>        formation amplifies the initial seed fields (10^-14 comoving<br>        Gauss) to the values observed in low-redshift galaxies (1-10<br>        {\ensuremath{\mu}} G\). The magnetic field topology is<br>        closely connected to galaxy morphology such that irregular<br>        fields are hosted by early-type galaxies, while large-scale,<br>        ordered fields are present in disc galaxies. Using two simple<br>        models for the energy distribution of relativistic electrons we<br>        predict the diffuse radio emission of 280 clusters with a<br>        baryonic mass resolution of 1.1texttimes 10^7<br>        M\_\{☉\}\, and generate mock observations for Very Large<br>        Array (VLA), Low-Frequency Array (LOFAR), Australian Square<br>        Kilometre Array Pathfinder (ASKAP), and Square Kilometre Array<br>        (SKA). Our simulated clusters show extended radio emission,<br>        whose detectability correlates with their virial mass. We<br>        reproduce the observed scaling relations between total radio<br>        power and X-ray emission, M_500, and the Sunyaev-Zel'dovich<br>        Y_500 parameter. The radio emission surface brightness<br>        profiles of our most massive clusters are in reasonable<br>        agreement with VLA measurements of Coma and Perseus. Finally, we<br>        discuss the fraction of detected extended radio haloes as a<br>        function of virial mass and source count functions for different<br>        instruments. Overall our results agree encouragingly well with<br>        observations, but a refined analysis requires a more<br>        sophisticated treatment of relativistic particles in large-scale<br>        galaxy formation simulations.</td>
+</tr>
+<tr id="bib_2018MNRAS.480.5113M" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2018MNRAS.480.5113M,
+  author = {Marinacci, Federico and Vogelsberger, Mark and Pakmor, R&uuml;diger and Torrey, Paul and Springel, Volker and Hernquist, Lars and Nelson, Dylan and Weinberger, Rainer and Pillepich, Annalisa and Naiman, Jill and Genel, Shy},
+  title = {First results from the IllustrisTNG simulations: radio haloes and magnetic fields},
+  journal = {mnras},
+  year = {2018},
+  volume = {480},
+  number = {4},
+  pages = {5113-5139},
+  doi = {https://doi.org/10.1093/mnras/sty2206}
+}
+</pre></td>
+</tr>
+<tr id="2019MNRAS.489.5004K" class="entry">
+	<td>K&ouml;rtgen, B., Banerjee, R., Pudritz, R.E. and Schmidt, W.</td>
+	<td>Global dynamics of the interstellar medium in magnetized disc galaxies <p class="infolinks">[<a href="javascript:toggleInfo('2019MNRAS.489.5004K','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2019MNRAS.489.5004K','bibtex')">BibTeX</a>]</p></td>
+	<td>2019</td>
+	<td>mnras<br/>Vol. 489(4), pp. 5004-5021&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/stz2491">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2019MNRAS.489.5004K" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Magnetic fields are an elemental part of the interstellar medium in<br>        galaxies. However, their impact on gas dynamics and star<br>        formation in galaxies remains controversial. We use a suite of<br>        global magnetohydrodynamic simulations of isolated disc galaxies<br>        to study the influence of magnetic fields on the diffuse and<br>        dense gas in the discs. We find that the magnetic field acts in<br>        multiple ways. Stronger magnetized discs fragment earlier due to<br>        the shorter growth time of the Parker instability. Due to the<br>        Parker instability in the magnetized discs, we also find cold (T<br>        lt 50 K) and dense (n\sim 103 - 104<br>        cm\-3) gas several hundred pc above/below the mid-plane<br>        without any form of stellar feedback. In addition, magnetic<br>        fields change the fragmentation pattern. While in the<br>        hydrodynamic case, the disc breaks up into ring-like structures,<br>        magnetized discs show the formation of filamentary entities that<br>        extent both in the azimuthal and radial direction. These kpc<br>        scale filaments become magnetically (super-)critical very<br>        quickly and allow for the rapid formation of massive giant<br>        molecular clouds. Our simulations suggest that major differences<br>        in the behaviour of star formation - due to a varying<br>        magnetization - in galaxies could arise.</td>
+</tr>
+<tr id="bib_2019MNRAS.489.5004K" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2019MNRAS.489.5004K,
+  author = {K&ouml;rtgen, Bastian and Banerjee, Robi and Pudritz, Ralph E. and Schmidt, Wolfram},
+  title = {Global dynamics of the interstellar medium in magnetized disc galaxies},
+  journal = {mnras},
+  year = {2019},
+  volume = {489},
+  number = {4},
+  pages = {5004-5021},
+  doi = {https://doi.org/10.1093/mnras/stz2491}
+}
+</pre></td>
+</tr>
+<tr id="2020A&A...641A.165N" class="entry">
+	<td>Ntormousi, E., Tassis, K., Del Sordo, F., Fragkoudi, F. and Pakmor, R.</td>
+	<td>A dynamo amplifying the magnetic field of a Milky-Way-like galaxy <p class="infolinks">[<a href="javascript:toggleInfo('2020A&A...641A.165N','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2020A&A...641A.165N','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>aap<br/>Vol. 641, pp. A165&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1051/0004-6361/202037835">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2020A&A...641A.165N" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: Context. The magnetic fields of spiral galaxies are so strong that they<br>        cannot qualify as primordial. Their typical values are over one<br>        billion times higher than any value predicted for the early<br>        Universe. Explaining this immense growth and incorporating it in<br>        galaxy evolution theories is one of the long-standing challenges<br>        in astrophysics. &bsol; Aims: So far, the most<br>        successful theory for the sustained growth of the galactic<br>        magnetic field is the alpha-omega dynamo. This theory predicts a<br>        characteristic dipolar or quadrupolar morphology for the<br>        galactic magnetic field, which has been observed in external<br>        galaxies. So far, however, there has been no direct<br>        demonstration of a mean-field dynamo operating in direct, multi-<br>        physics simulations of spiral galaxies. We carry out such a<br>        demonstration in this work. &bsol; Methods: We employed<br>        numerical models of isolated, star-forming spiral galaxies that<br>        include a magnetized gaseous disk, a dark matter halo, stars,<br>        and stellar feedback. Naturally, the resulting magnetic field<br>        has a complex morphology that includes a strong random<br>        component. Using a smoothing of the magnetic field on small<br>        scales, we were able to separate the mean from the turbulent<br>        component and analyze them individually. &bsol; Results:<br>        We find that a mean-field dynamo naturally occurs as a result of<br>        the dynamical evolution of the galaxy and amplifies the magnetic<br>        field by an order of magnitude over half a Gyr. Despite the<br>        highly dynamical nature of these models, the morphology of the<br>        mean component of the field is identical to analytical<br>        predictions. &bsol; Conclusions: This result underlines<br>        the importance of the mean-field dynamo in galactic evolution.<br>        Moreover, by demonstrating the natural growth of the magnetic<br>        field in a complex galactic environment, it brings us a step<br>        closer to understanding the cosmic origin of magnetic fields.</td>
+</tr>
+<tr id="bib_2020A&A...641A.165N" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2020A&A...641A.165N,
+  author = {Ntormousi, Evangelia and Tassis, Konstantinos and Del Sordo, Fabio and Fragkoudi, Francesca and Pakmor, R&uuml;diger},
+  title = {A dynamo amplifying the magnetic field of a Milky-Way-like galaxy},
+  journal = {aap},
+  year = {2020},
+  volume = {641},
+  pages = {A165},
+  doi = {https://doi.org/10.1051/0004-6361/202037835}
+}
+</pre></td>
+</tr>
+<tr id="2020MNRAS.494.4393S" class="entry">
+	<td>Steinwandel, U.P., Dolag, K., Lesch, H., Moster, B.P., Burkert, A. and Prieto, A.</td>
+	<td>On the origin of magnetic driven winds and the structure of the galactic dynamo in isolated galaxies <p class="infolinks">[<a href="javascript:toggleInfo('2020MNRAS.494.4393S','abstract')">Abstract</a>] [<a href="javascript:toggleInfo('2020MNRAS.494.4393S','bibtex')">BibTeX</a>]</p></td>
+	<td>2020</td>
+	<td>mnras<br/>Vol. 494(3), pp. 4393-4412&nbsp;</td>
+	<td>article</td>
+	<td><a href="https://doi.org/10.1093/mnras/staa817">DOI</a> &nbsp;</td>
+</tr>
+<tr id="abs_2020MNRAS.494.4393S" class="abstract noshow">
+	<td colspan="6"><b>Abstract</b>: We investigate the build-up of the galactic dynamo and subsequently the<br>        origin of a magnetic driven outflow. We use a set-up of an<br>        isolated disc galaxy with a realistic circum-galactic medium<br>        (CGM). We find good agreement of the galactic dynamo with<br>        theoretical and observational predictions from the radial and<br>        toroidal components of the magnetic field as function of radius<br>        and disc scale height. We find several field reversals<br>        indicating dipole structure at early times and quadrupole<br>        structure at late times. Together with the magnetic pitch angle<br>        and the dynamo control parameters R_\alpha,<br>        R_\omega, and D, we present strong evidence<br>        for an \alpha^2-\Omega dynamo.<br>        The formation of a bar in the centre leads to further<br>        amplification of the magnetic field via adiabatic compression<br>        which subsequently drives an outflow. Due to the Parker<br>        instability the magnetic field lines rise to the edge of the<br>        disc, break out, and expand freely in the CGM driven by the<br>        magnetic pressure. Finally, we investigate the correlation<br>        between magnetic field and star formation rate. Globally, we<br>        find that the magnetic field is increasing as function of the<br>        star formation rate surface density with a slope between 0.3 and<br>        0.45 in good agreement with predictions from theory and<br>        observations. Locally, we find that the magnetic field can<br>        decrease while star formation increases. We find that this<br>        effect is correlated with the diffusion of magnetic field from<br>        the spiral arms to the interarm regions which we explicitly<br>        include by solving the induction equation and accounting for<br>        non-linear terms.</td>
+</tr>
+<tr id="bib_2020MNRAS.494.4393S" class="bibtex noshow">
+<td colspan="6"><b>BibTeX</b>:
+<pre>
+@article{2020MNRAS.494.4393S,
+  author = {Steinwandel, Ulrich P. and Dolag, Klaus and Lesch, Harald and Moster, Benjamin P. and Burkert, Andreas and Prieto, Almudena},
+  title = {On the origin of magnetic driven winds and the structure of the galactic dynamo in isolated galaxies},
+  journal = {mnras},
+  year = {2020},
+  volume = {494},
+  number = {3},
+  pages = {4393-4412},
+  doi = {https://doi.org/10.1093/mnras/staa817}
+}
+</pre></td>
+</tr>
+</tbody>
+</table>
+<footer>
+ <small>Created by <a href="http://jabref.sourceforge.net">JabRef</a> on 07/11/2020.</small>
+</footer>
+<!-- file generated by JabRef -->
+</body>
+</html>
