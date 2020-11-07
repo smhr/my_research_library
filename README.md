@@ -1,1 +1,1 @@
-# my_research_library
+This repository includes list of papers related to my ongoing researches.
