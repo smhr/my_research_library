@@ -1,1 +1,1 @@
-This repository includes list of papers related to my ongoing researches
+This repository includes list of papers related to my ongoing researches.
